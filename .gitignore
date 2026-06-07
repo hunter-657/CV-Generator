@@ -1,0 +1,10 @@
+# Ignore frontend node_modules
+cv-generator/node_modules/
+
+# Ignore backend node_modules (if applicable)
+backend/node_modules/
+
+# Optional: Ignore environment variables or local build files
+.env
+cv-generator/dist/
+backend/uploads/
