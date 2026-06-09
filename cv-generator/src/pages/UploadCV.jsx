@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function UploadCV() {
+  const navigate = useNavigate();
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -29,6 +31,12 @@ export default function UploadCV() {
       console.log(data);
 
       alert("Resume uploaded successfully!");
+
+      navigate("/chat", {
+      state: {
+        uploadedResume: data,
+    },
+  });
     } catch (error) {
       console.error(error);
       alert("Upload failed");

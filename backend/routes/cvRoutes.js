@@ -6,6 +6,7 @@ const multer = require("multer");
 const pdf = require("pdf-parse");
 const fs = require("fs");
 const { chatWithResume } = require("../agents/chatAgent");
+const { generateResume } = require("../agents/resumeAgent");
 
 const router = express.Router();
 const upload = multer({
@@ -60,44 +61,35 @@ res.json({
   });
 }
 });
-
-router.post("/extract", async (req, res) => {
-  const { text } = req.body;
-  try {
-
-
-    // Agent 1
-    const extractedData = await extractResumeData(text);
-
-    // Agent 2
-    const enhancedData = await enhanceResume(extractedData);
-    const { error } = await supabase
-
-    .from("resumes")
-    .insert([
-        {
-          name: extractedData.name,
-          extracted_data: extractedData,
-          enhanced_data: enhancedData,
-        },
-    ]);
-    if (error) {
-      console.error("Supabase Error:", error);
-    }
-    res.json({
-      success: true,
-      extractedData,
-      enhancedData,
-    });
-  } 
-catch (error) {
-  console.error("AI ERROR:", error);
 router.post("/chat", async (req, res) => {
   try {
-    const { resumeData, question } = req.body;
+    console.log("BODY:", req.body);
+
+    const { question } = req.body;
+
+    const { data, error } = await supabase
+      .from("resumes")
+      .select("*")
+      .order("id", { ascending: false })
+      .limit(1);
+
+    console.log("RESUME:", data);
+
+    if (error) throw error;
+
+    if (!data.length) {
+      return res.status(404).json({
+        success: false,
+        error: "No resume found",
+      });
+    }
+
+    const resume =
+      data[0].enhanced_data ||
+      data[0].extracted_data;
 
     const answer = await chatWithResume(
-      resumeData,
+      resume,
       question
     );
 
@@ -105,7 +97,10 @@ router.post("/chat", async (req, res) => {
       success: true,
       answer,
     });
+
   } catch (error) {
+    console.error("CHAT ERROR:", error);
+
     res.status(500).json({
       success: false,
       error: error.message,
@@ -113,109 +108,81 @@ router.post("/chat", async (req, res) => {
   }
 });
 
-const errorText = String(error?.message || error);
+router.post("/extract", async (req, res) => {
+  const { text } = req.body;
 
-if (
-  errorText.includes("429") ||
-  errorText.includes("RESOURCE_EXHAUSTED") ||
-  errorText.toLowerCase().includes("quota")
-)
-{
-    console.log("Using DEMO FALLBACK MODE");
+  try {
+    const resume = await generateResume(text);
 
-const name =
-  text.match(/Name:\s*(.*)/i)?.[1]?.trim() || "Unknown User";
+    const { error } = await supabase
+      .from("resumes")
+      .insert([
+        {
+          name: resume.name,
+          extracted_data: resume,
+          enhanced_data: resume,
+        },
+      ]);
 
-const email =
-  text.match(/Email:\s*(.*)/i)?.[1]?.trim() || "";
-
-const phone =
-  text.match(/Phone:\s*(.*)/i)?.[1]?.trim() || "";
-
-const educationText =
-  text.match(/Education:\s*([\s\S]*?)Skills:/i)?.[1]?.trim() || "";
-
-const skillsText =
-  text.match(/Skills:\s*([\s\S]*?)Experience:/i)?.[1]?.trim() || "";
-
-const experienceText =
-  text.match(/Experience:\s*([\s\S]*?)Projects:/i)?.[1]?.trim() || "";
-
-const projectsText =
-  text.match(/Projects:\s*([\s\S]*?)LinkedIn:/i)?.[1]?.trim() || "";
-
-const linkedin =
-  text.match(/LinkedIn:\s*(.*?)\s*GitHub:/is)?.[1]?.trim() || "";
-
-const github =
-  text.match(/GitHub:\s*(.*)/i)?.[1]?.trim() || "";
+    if (error) {
+      console.error("Supabase Error:", error);
+    }
 
     return res.json({
       success: true,
+      resume,
+    });
 
-extractedData: {
-  name,
-  email,
-  phone,
-  linkedin,
-  github,
+  }
+  catch (error) {
+  console.error("AI ERROR:", error);
 
-  education: educationText
-    ? educationText.split("\n").filter(Boolean)
-    : [],
+  const errorText = String(error?.message || error);
 
-  skills: skillsText
-    ? skillsText
-        .split(/,|\n/)
+  if (
+    errorText.includes("429") ||
+    errorText.includes("503") ||
+    errorText.includes("RESOURCE_EXHAUSTED") ||
+    errorText.includes("UNAVAILABLE") ||
+    errorText.toLowerCase().includes("quota")
+  ) {
+    console.log("USING DEMO FALLBACK");
+
+    const resume = {
+      name: text.match(/Name:\s*(.*)/i)?.[1]?.trim() || "Unknown User",
+      email: text.match(/Email:\s*(.*)/i)?.[1]?.trim() || "",
+      phone: text.match(/Phone:\s*(.*)/i)?.[1]?.trim() || "",
+
+      summary:
+        "Motivated software developer with strong problem-solving abilities and experience building modern applications.",
+
+      skills: text
+        .match(/Skills:\s*(.*)/i)?.[1]
+        ?.split(",")
         .map((s) => s.trim())
-        .filter(Boolean)
-    : [],
+        .filter(Boolean) || [],
 
-  experience: experienceText
-    ? [experienceText]
-    : [],
+      education: [
+        text.match(/Education:\s*(.*)/i)?.[1]?.trim() || ""
+      ],
 
-  projects: projectsText
-    ? projectsText
-        .split(/,|\n/)
-        .map((p) => p.trim())
-        .filter(Boolean)
-    : [],
-},
+      projects: [
+        {
+          title: "Personal Project",
+          description:
+            "Built and maintained software solutions using modern technologies.",
+          technologies: ["React", "Node.js"],
+        },
+      ],
+    };
 
-enhancedData: {
-  summary: `${name} is a motivated software developer with experience in modern technologies and software development projects.`,
-
-  skills: skillsText
-    ? skillsText
-        .split(/,|\n/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [],
-
-  projects: (
-    projectsText
-      ? projectsText
-          .split(/,|\n/)
-          .map((p) => p.trim())
-          .filter(Boolean)
-      : []
-  ).map((project) => ({
-    title: project,
-    description: `Developed ${project} using modern software engineering principles and industry best practices.`,
-    technologies: skillsText
-      ? skillsText
-          .split(/,|\n/)
-          .map((s) => s.trim())
-          .filter(Boolean)
-          .slice(0, 4)
-      : [],
-  })),
-},
+    return res.json({
+      success: true,
+      resume,
     });
   }
 
-  res.status(500).json({
+  return res.status(500).json({
     success: false,
     error: error.message,
   });

@@ -14,7 +14,7 @@ export default function CreateCV() {
     skills: "",
     experience: "",
     projects: "",
-    likedin: "",
+    linkedin: "",
     github: "",
   });
 
@@ -58,12 +58,12 @@ GitHub: ${formData.github}
 
       const data = await response.json();
 
-      console.log("API RESPONSE:", data);
+      console.log("API RESPONSE:",  JSON.stringify(data, null, 2));
 
       if (!response.ok) {
         throw new Error(data.error || "Backend Error");
       }
-
+      setLoading(false);
       navigate("/resume", {
         state: data,
       });
